@@ -1,7 +1,13 @@
 import { createClient } from '@supabase/supabase-js'
 
-// Estas credenciales las obtienes en el Panel de Supabase -> Project Settings -> API
-const supabaseUrl = 'https://rvakwlqsorljlffunqcw.supabase.co'
-const supabaseAnonKey = 'sb_publishable_yra2HdV_JKWc6whtj4JdXA_NCmDfUFYcd ..'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    flowType: 'pkce' // Estándar moderno de seguridad para JWT
+  }
+})

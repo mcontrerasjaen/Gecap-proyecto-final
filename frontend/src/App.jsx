@@ -3,6 +3,7 @@ import FormularioHCE from './components/FormularioHCE';
 import AgendaMedica from './components/AgendaMedica';
 import ReservasOnline from './components/ReservasOnline';
 import RegistroPacientes from './components/RegistroPacientes';
+import PortalPaciente from './components/PortalPaciente'; // <--- REVISA QUE ESTE ARCHIVO EXISTA
 import { LISTA_CENTROS } from './config/centros';
 import { supabase } from './lib/supabaseClient';
 
@@ -15,45 +16,12 @@ function App() {
   const [modoRegistro, setModoRegistro] = useState(false);
   const [enEsperaCount, setEnEsperaCount] = useState(0);
 
-  useEffect(() => {
-  // 1. Verificar si ya hay una sesión activa al cargar (para el email de confirmación)
-  const checkSession = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
-      console.log("Sesión detectada vía Email Confirmation");
-      setIsLogged(true);
-      sessionStorage.setItem('gecap_session_valid', 'true');
-      
-      // Guardamos los datos del médico para la firma
-      const userData = {
-        nombre: session.user.user_metadata.nombre,
-        colegiado: session.user.user_metadata.colegiado,
-        email: session.user.email
-      };
-      setMedico(userData);
-      localStorage.setItem('medico_activo', JSON.stringify(userData));
-    }
-  };
+  // ESTADO PARA ALTERNAR ENTRE MODO MÉDICO Y MODO PACIENTE
+  const [rolAcceso, setRolAcceso] = useState('medico'); 
 
-  checkSession();
-
-  // 2. Escuchar cambios de estado (Login/Logout/Email Confirm)
-  const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-    if (event === 'SIGNED_IN' && session) {
-      setIsLogged(true);
-      sessionStorage.setItem('gecap_session_valid', 'true');
-    }
-    if (event === 'SIGNED_OUT') {
-      setIsLogged(false);
-      sessionStorage.removeItem('gecap_session_valid');
-    }
-  });
-
-  return () => subscription.unsubscribe();
-}, []);
   // 1. EFECTO: CONTADOR EN TIEMPO REAL
   useEffect(() => {
-  if (!isLogged || !medico) return;
+    if (!isLogged || rolAcceso !== 'medico') return;
     const obtenerConteo = async () => {
       const { count } = await supabase
         .from('citas')
@@ -65,7 +33,7 @@ function App() {
     const channel = supabase.channel('cambios-citas').on('postgres_changes', 
       { event: '*', schema: 'public', table: 'citas' }, () => obtenerConteo()).subscribe();
     return () => supabase.removeChannel(channel);
-  }, [isLogged, vistaActual]);
+  }, [isLogged, vistaActual, rolAcceso]);
 
   // 2. LÓGICA DE AUTENTICACIÓN
   const handleAuth = async (e) => {
@@ -108,49 +76,68 @@ function App() {
     }
   };
 
-  if (!isLogged) {
+  // --- RENDERIZADO A: PORTAL DEL PACIENTE ---
+  if (rolAcceso === 'paciente') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-6 font-sans">
-        <form onSubmit={handleAuth} className="bg-white p-10 rounded-[3rem] shadow-2xl max-w-sm w-full space-y-6 border-t-8 border-blue-600 animate-in zoom-in duration-500">
-          <div className="text-center">
-            <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-white text-3xl font-black shadow-lg italic">✚</div>
-            <h2 className="text-2xl font-black text-slate-800 mt-4 tracking-tighter italic uppercase">GECAP Pro</h2>
-            <p className="text-slate-400 text-[10px] uppercase font-black tracking-widest mt-1">Acceso Profesional JWT</p>
-          </div>
-
-          <div className="space-y-4">
-            {(!medico || modoRegistro) ? (
-              <>
-                <input name="nombre" type="text" placeholder="Nombre Completo" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" required />
-                <input name="colegiado" type="text" placeholder="Nº Colegiado" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" required />
-                <input name="email" type="email" placeholder="Email Real" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500" required />
-              </>
-            ) : (
-              <div className="p-5 bg-blue-50 rounded-2xl border-2 border-blue-100 text-center shadow-inner">
-                <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Cuenta Detectada</p>
-                <p className="text-lg font-black text-slate-800 italic uppercase">Dr. {medico.nombre}</p>
-                <p className="text-[10px] text-slate-500 font-mono mt-1">{medico.email}</p>
-                <input name="email" type="hidden" value={medico.email} /> 
-              </div>
-            )}
-            <input name="password" type="password" placeholder="Contraseña Alfanumérica" className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 font-mono shadow-sm" required />
-          </div>
-
-          <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black uppercase tracking-widest hover:bg-blue-600 transition-all shadow-xl active:scale-95 text-xs">
-            {(!medico || modoRegistro) ? "Registrar e Iniciar" : "Verificar Identidad"}
-          </button>
-          
-          {medico && !modoRegistro && (
-            <button type="button" onClick={cambiarDeCuenta} className="w-full text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest transition-colors italic underline">
-              ¿No eres tú? Cambiar de cuenta
-            </button>
-          )}
-        </form>
+      <div className="relative">
+        <PortalPaciente />
+        <button 
+          onClick={() => setRolAcceso('medico')}
+          className="fixed bottom-6 right-6 bg-slate-900 text-white px-6 py-3 rounded-full text-[10px] font-black uppercase tracking-widest shadow-2xl hover:bg-blue-600 transition-all z-50"
+        >
+          ← Volver a Acceso Médico
+        </button>
       </div>
     );
   }
 
-  // --- RENDERIZADO B: DASHBOARD PROFESIONAL ---
+  // --- RENDERIZADO B: LOGIN MÉDICO ---
+  if (!isLogged) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 font-sans">
+        <form onSubmit={handleAuth} className="bg-white p-10 rounded-[3rem] shadow-2xl max-w-sm w-full space-y-6 border-t-8 border-blue-600 animate-in zoom-in">
+          <div className="text-center">
+            <div className="bg-blue-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto text-white text-3xl font-black shadow-lg">✚</div>
+            <h2 className="text-2xl font-black text-slate-800 mt-4 tracking-tighter uppercase italic">GECAP Pro</h2>
+            <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Portal Facultativo</p>
+          </div>
+          <div className="space-y-4">
+            {(!medico || modoRegistro) ? (
+              <>
+                <input name="nombre" type="text" placeholder="Nombre Completo" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required />
+                <input name="colegiado" type="text" placeholder="Nº Colegiado" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required />
+                <input name="email" type="email" placeholder="Email Real" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none" required />
+              </>
+            ) : (
+              <div className="p-5 bg-blue-50 rounded-2xl border-2 border-blue-100 text-center">
+                <p className="text-[10px] font-black text-blue-400 uppercase">Perfil Detectado</p>
+                <p className="text-lg font-black text-slate-800 italic uppercase">Dr. {medico.nombre}</p>
+                <input name="email" type="hidden" value={medico.email} /> 
+              </div>
+            )}
+            <input name="password" type="password" placeholder="Contraseña" className="w-full p-4 bg-slate-50 border rounded-2xl outline-none font-mono" required />
+          </div>
+          <button type="submit" className="w-full bg-slate-900 text-white py-5 rounded-[2rem] font-black uppercase text-xs hover:bg-blue-600 transition-all shadow-xl">
+            {(!medico || modoRegistro) ? "Registrar e Iniciar" : "Acceso Seguro"}
+          </button>
+          {medico && !modoRegistro && (
+            <button type="button" onClick={cambiarDeCuenta} className="w-full text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest italic underline">
+              ¿No eres tú? Cambiar cuenta
+            </button>
+          )}
+        </form>
+
+        <button 
+          onClick={() => setRolAcceso('paciente')}
+          className="mt-8 text-white/50 hover:text-white text-[10px] font-black uppercase tracking-[0.3em] transition-all"
+        >
+          ¿Eres paciente? Accede a tu historial clínico →
+        </button>
+      </div>
+    );
+  }
+
+  // --- RENDERIZADO C: DASHBOARD MÉDICO ---
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden font-sans">
       <aside className="w-72 bg-slate-900 text-slate-300 flex flex-col p-6 shadow-2xl z-20">
@@ -159,36 +146,29 @@ function App() {
           <h1 className="text-2xl font-black text-white tracking-tighter italic">GECAP</h1>
         </div>
 
-        {/* SELECTOR DE SEDE */}
         <div className="mb-8 px-2">
           <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest ml-1">Sede Operativa</label>
-          <select value={centroActivo.id} onChange={(e) => setCentroActivo(LISTA_CENTROS.find(c => c.id === parseInt(e.target.value)))} className="w-full mt-1 bg-slate-800 border-none rounded-xl p-3 text-xs font-bold text-blue-400 outline-none cursor-pointer focus:ring-2 focus:ring-blue-500">
+          <select value={centroActivo.id} onChange={(e) => setCentroActivo(LISTA_CENTROS.find(c => c.id === parseInt(e.target.value)))} className="w-full mt-1 bg-slate-800 border-none rounded-xl p-3 text-xs font-bold text-blue-400 outline-none">
             {LISTA_CENTROS.map(c => <option key={c.id} value={c.id}>📍 {c.nombre}</option>)}
           </select>
         </div>
 
         <nav className="flex-1 space-y-3">
-          {/* BOTÓN AGENDA CON CONTADOR REALTIME */}
           <button onClick={() => setVistaActual('agenda')} className={`w-full flex items-center justify-between p-4 rounded-2xl font-bold transition-all ${vistaActual === 'agenda' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}>
             <div className="flex items-center gap-4"><span>📅</span> Agenda Diaria</div>
             {enEsperaCount > 0 && (
               <span className="bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-lg animate-bounce shadow-lg border border-red-400">{enEsperaCount}</span>
             )}
           </button>
-          
           <button onClick={() => setVistaActual('pacientes')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${vistaActual === 'pacientes' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><span>👥</span> Alta Pacientes</button>
           <button onClick={() => setVistaActual('formulario')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${vistaActual === 'formulario' ? 'bg-blue-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><span>📋</span> Consulta</button>
           <button onClick={() => setVistaActual('reservas')} className={`w-full flex items-center gap-4 p-4 rounded-2xl font-bold transition-all ${vistaActual === 'reservas' ? 'bg-indigo-600 text-white shadow-lg' : 'hover:bg-slate-800 text-slate-400'}`}><span>🔗</span> Reservas Online</button>
         </nav>
 
-        {/* PERFIL FACULTATIVO */}
-        <div className="p-6 bg-slate-950/50 rounded-3xl mt-4 border border-slate-800/50">
-          <div className="flex items-center gap-3 mb-4 overflow-hidden text-ellipsis">
+        <div className="p-6 bg-slate-950/50 rounded-3xl mt-4 border border-slate-800">
+          <div className="flex items-center gap-3 mb-4 overflow-hidden">
             <div className="w-10 h-10 shrink-0 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black">{medico?.nombre?.charAt(0)}</div>
-            <div className="truncate">
-              <p className="text-xs font-black text-white truncate italic uppercase">Dr. {medico?.nombre?.split(' ')[0]}</p>
-              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">Col: {medico?.colegiado}</p>
-            </div>
+            <div className="truncate"><p className="text-xs font-black text-white truncate italic uppercase">Dr. {medico?.nombre}</p><p className="text-[10px] text-slate-500 font-bold">Col: {medico?.colegiado}</p></div>
           </div>
           <button onClick={cerrarSesion} className="w-full py-2 bg-slate-800 hover:bg-red-600 text-slate-400 hover:text-white rounded-xl text-[9px] font-black uppercase transition-all tracking-widest">Cerrar Sesión</button>
         </div>
